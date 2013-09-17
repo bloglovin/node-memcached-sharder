@@ -10,7 +10,7 @@
   "license": "MIT",
   "dependencies": {
     "lodash": "~2.0.0",
-    "memcached-wrapper": "https://github.com/bloglovin/node-memcached/tarball/v0.2.2",
+    "memcached-wrapper": "git://github.com/bloglovin/node-memcached-wrapper#v0.0.2",
     "buffer-crc32": "~0.2.1"
   }
 }

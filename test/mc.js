@@ -39,8 +39,8 @@ suite('BL Memcached Sharder', function () {
       }
     });
 
-    assert.equal(m.conns['1.1.1.1:11211'].servers[0], '1.1.1.1:11211');
-    assert.equal(m.conns['1.1.1.2:11211'].servers[0], '1.1.1.2:11211');
+    assert.equal(m.conns['1.1.1.1:11211'].Mc.servers[0], '1.1.1.1:11211');
+    assert.equal(m.conns['1.1.1.2:11211'].Mc.servers[0], '1.1.1.2:11211');
   });
 
   test('Hashing key works', function () {

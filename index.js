@@ -5,7 +5,7 @@
 //
 
 var _     = require('lodash');
-var mc    = require('memcached');
+var mc    = require('memcached-wrapper');
 var crc32 = require('buffer-crc32');
 
 var Memcached = module.exports = function memcached(options) {
@@ -32,7 +32,7 @@ var Memcached = module.exports = function memcached(options) {
 Memcached.prototype.setupConnections = function setupConnections(servers, config) {
   var connections = {};
   _.map(servers, function (server) {
-    connections[server] = new mc(server, config);
+    connections[server] = new mc({ servers: server, options: config });
   });
   return connections;
 };
