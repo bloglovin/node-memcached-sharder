@@ -14,7 +14,7 @@ var Memcached = module.exports = function memcached(options) {
   options.servers = options.servers || { '127.0.0.1:11211': 1 };
 
   // Setup connections and hashrings
-  var config     = options.config || {};
+  var config     = options.options || {};
   this.sumWeight = 0;
   this.conns     = this.setupConnections(Object.keys(options.servers), config);
   this.servers   = this.serverRing(options.servers);
