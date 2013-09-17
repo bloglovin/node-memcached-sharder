@@ -115,7 +115,7 @@ _.map(methods, function (method) {
   Memcached.prototype[method] = function (method) {
     return function () {
       var server = this.hashKey(arguments[0]);
-      server.apply(server, arguments);
+      server[method].apply(server, arguments);
     };
   }(method);
 });
