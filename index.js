@@ -32,7 +32,7 @@ var Memcached = module.exports = function memcached(options) {
 Memcached.prototype.setupConnections = function setupConnections(servers, config) {
   var connections = {};
   _.map(servers, function (server) {
-    connections[server] = new mc({ servers: server, options: config });
+    connections[server] = mc({ servers: server, options: config });
   });
   return connections;
 };
@@ -98,6 +98,8 @@ Memcached.prototype.serverRing = function serverRing(servers) {
 // **Returns** a memcached connection object.
 //
 Memcached.prototype.hashKey = function hashKey(key) {
+  // Use first server to prefix key
+  key = this.conns[this.servers[0]]._prefixKey(key);
   var checksum = crc32.unsigned(key);
   var index    = checksum % this.sumWeight;
   var server   = this.servers[index];

@@ -1,6 +1,6 @@
 {
   "name": "bloglovin-memcached-sharder",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Super simple memcached sharding.",
   "main": "index.js",
   "scripts": {
@@ -10,7 +10,7 @@
   "license": "MIT",
   "dependencies": {
     "lodash": "~2.0.0",
-    "memcached-wrapper": "git://github.com/bloglovin/node-memcached-wrapper#v0.0.2",
+    "memcached-wrapper": "git://github.com/bloglovin/node-memcached-wrapper#0.0.3",
     "buffer-crc32": "~0.2.1"
   }
 }
