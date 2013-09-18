@@ -55,16 +55,16 @@ Memcached.prototype.setupConnections = function setupConnections(servers, config
 //
 //   [
 //     '1.1.1.1',
+//     '1.1.1.1',
+//     '1.1.1.1',
+//     '1.1.1.1',
 //     '1.1.1.2',
+//     '1.1.1.2',
+//     '1.1.1.2',
+//     '1.1.1.2',
+//     '1.1.1.3',
 //     '1.1.1.3',
 //     '1.1.1.4',
-//     '1.1.1.1',
-//     '1.1.1.2',
-//     '1.1.1.3',
-//     '1.1.1.1',
-//     '1.1.1.2',
-//     '1.1.1.1',
-//     '1.1.1.2',
 //   ]
 //
 // * **servers**, _an object containing servers and their respective weight._
@@ -75,15 +75,10 @@ Memcached.prototype.serverRing = function serverRing(servers) {
   var hashRing    = [];
   var serverCount = _.reduce(servers, function (t, w) { return t + w; }, 0);
   this.sumWeight  = serverCount;
-  function addToRing(weight, ip) {
-    hashRing.push(ip);
-    if (--servers[ip] < 1) {
-      delete(servers[ip]);
-    }
-  }
-  while (hashRing.length < serverCount) {
-    _.forEach(servers, addToRing);
-  }
+
+  _.forEach(servers, function (weight, ip) {
+    for (var i = 0; i < weight; i++) hashRing.push(ip);
+  });
 
   return hashRing;
 };
