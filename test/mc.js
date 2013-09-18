@@ -7,44 +7,25 @@ var mc     = require('../');
 
 suite('BL Memcached Sharder', function () {
 
-  test('Correctly generates hashring', function () {
-    var m = new mc();
-
-    var a = m.serverRing({
-      '1.1.1.1': 3,
-      '1.1.1.2': 3,
-      '1.1.1.3': 2,
-      '1.1.1.4': 1
-    });
-
-    var a_expected = [
-      '1.1.1.1',
-      '1.1.1.1',
-      '1.1.1.1',
-      '1.1.1.2',
-      '1.1.1.2',
-      '1.1.1.2',
-      '1.1.1.3',
-      '1.1.1.3',
-      '1.1.1.4',
-    ];
-    assert.deepEqual(a, a_expected);
-  });
-
   test('Correctly creates server connections', function () {
     var m = new mc({
-      servers: {
-        '1.1.1.1:11211': 1,
-        '1.1.1.2:11211': 1
-      }
+      servers: [
+        { uri: '1.1.1.1:11211', weight: 1 },
+        { uri: '1.1.1.2:11211', weight: 1 }
+      ]
     });
 
-    assert.equal(m.conns['1.1.1.1:11211'].Mc.servers[0], '1.1.1.1:11211');
-    assert.equal(m.conns['1.1.1.2:11211'].Mc.servers[0], '1.1.1.2:11211');
+    assert.equal(m.conns[0].Mc.servers[0], '1.1.1.1:11211');
+    assert.equal(m.conns[1].Mc.servers[0], '1.1.1.2:11211');
   });
 
   test('Hashing key works', function () {
-    var m = new mc();
+    var m = new mc({
+      servers: [
+        { uri: '1.1.1.1:11211', weight: 1 },
+        { uri: '1.1.1.2:11211', weight: 1 }
+      ]
+    });
     var server = m.hashKey('foobar');
     assert.equal(typeof server, 'object');
   });

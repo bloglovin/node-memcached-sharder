@@ -11,13 +11,13 @@ var crc32 = require('buffer-crc32');
 var Memcached = module.exports = function memcached(options) {
   // Set default options
   options = typeof options === 'object' ? options : {};
-  options.servers = options.servers || { '127.0.0.1:11211': 1 };
+  options.servers = options.servers || [ { uri: '127.0.0.1:11211', weight: 1 } ];
 
   // Setup connections and hashrings
   var config     = options.options || {};
-  this.sumWeight = 0;
-  this.conns     = this.setupConnections(Object.keys(options.servers), config);
-  this.servers   = this.serverRing(options.servers);
+  this.sumWeight = _.reduce(options.servers, function (r, i) { return r + i.weight; }, 0);
+  this.conns     = this.setupConnections(_.map(options.servers, 'uri'), config);
+  this.servers   = options.servers;
 };
 
 //
@@ -30,57 +30,11 @@ var Memcached = module.exports = function memcached(options) {
 // **Returns** an object with connections keyed to ip.
 //
 Memcached.prototype.setupConnections = function setupConnections(servers, config) {
-  var connections = {};
+  var connections = [];
   _.map(servers, function (server) {
-    connections[server] = mc({ servers: server, options: config });
+    connections.push(mc({ servers: server, options: config }));
   });
   return connections;
-};
-
-//
-// ## Generate hash ring
-//
-// "Custom" hashring algorithm that creates an array with servers for sharding.
-//
-// Given the following server object:
-//
-//   {
-//     '1.1.1.1': 3,
-//     '1.1.1.2': 3,
-//     '1.1.1.3': 2,
-//     '1.1.1.4': 1
-//   }
-//
-// The following hash ring is created:
-//
-//   [
-//     '1.1.1.1',
-//     '1.1.1.1',
-//     '1.1.1.1',
-//     '1.1.1.1',
-//     '1.1.1.2',
-//     '1.1.1.2',
-//     '1.1.1.2',
-//     '1.1.1.2',
-//     '1.1.1.3',
-//     '1.1.1.3',
-//     '1.1.1.4',
-//   ]
-//
-// * **servers**, _an object containing servers and their respective weight._
-//
-// **Returns** an array of servers.
-//
-Memcached.prototype.serverRing = function serverRing(servers) {
-  var hashRing    = [];
-  var serverCount = _.reduce(servers, function (t, w) { return t + w; }, 0);
-  this.sumWeight  = serverCount;
-
-  _.forEach(servers, function (weight, ip) {
-    for (var i = 0; i < weight; i++) hashRing.push(ip);
-  });
-
-  return hashRing;
 };
 
 //
@@ -94,11 +48,19 @@ Memcached.prototype.serverRing = function serverRing(servers) {
 //
 Memcached.prototype.hashKey = function hashKey(key) {
   // Use first server to prefix key
-  key = this.conns[this.servers[0]]._prefixKey(key);
+  key = this.conns[0]._prefixKey(key);
   var checksum = crc32.unsigned(key);
   var index    = checksum % this.sumWeight;
-  var server   = this.servers[index];
-  return this.conns[server];
+
+  for (var i in this.servers) {
+    var server = this.servers[i];
+    if (index < server.weight) {
+      return this.conns[i];
+    }
+    else {
+      index -= server.weight;
+    }
+  }
 };
 
 //
