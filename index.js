@@ -32,7 +32,8 @@ var Memcached = module.exports = function memcached(options) {
 Memcached.prototype.setupConnections = function setupConnections(servers, config) {
   var connections = [];
   _.map(servers, function (server) {
-    connections.push(mc({ servers: server, options: config }));
+    var opts = _.cloneDeep(config);
+    connections.push(mc({ servers: server, options: opts }));
   });
   return connections;
 };
@@ -47,8 +48,6 @@ Memcached.prototype.setupConnections = function setupConnections(servers, config
 // **Returns** a memcached connection object.
 //
 Memcached.prototype.hashKey = function hashKey(key) {
-  // Use first server to prefix key
-  key = this.conns[0]._prefixKey(key);
   var checksum = crc32.unsigned(key);
   var index    = checksum % this.sumWeight;
 

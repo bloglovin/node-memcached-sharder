@@ -38,5 +38,25 @@ suite('BL Memcached Sharder', function () {
       assert.equal(typeof m[method], 'function');
     });
   });
+
+  test('Matches output form PHP implementation', function () {
+    // Servers
+    var m = new mc({
+      servers: [
+        { uri: '192.168.1.140:11211', weight: 100 },
+        { uri: '192.168.1.141:11211', weight: 100 },
+        { uri: '192.168.1.142:11211', weight: 100 },
+        { uri: '192.168.1.143:11211', weight: 100 }
+      ]
+    });
+
+    // Test keys returning the same values as the PHP app.
+    var a = m.hashKey('lol');
+    assert.equal(a.Mc.servers[0], '192.168.1.142:11211');
+    var b = m.hashKey('hejsan_varlden%$%#');
+    assert.equal(b.Mc.servers[0], '192.168.1.141:11211');
+    //var c = m.hashKey('hejsan_varlden%$%#');
+    //assert.equal(c.Mc.servers[0], '192.168.1.141:11211');
+  });
 });
 
