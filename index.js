@@ -68,7 +68,7 @@ Memcached.prototype.hashKey = function hashKey(key) {
 // Dynamically create prototype methods for the memcached API.
 //
 var methods = ['touch', 'get', 'gets', 'getMulti', 'set', 'replace', 'add',
-    'cas', 'append', 'prepend', 'incr', 'decr', 'del'];
+    'cas', 'append', 'prepend', 'incr', 'decr', 'remove'];
 _.map(methods, function (method) {
   Memcached.prototype[method] = function (method) {
     return function () {
