@@ -4,9 +4,10 @@
 // Super simple memcached client tailored to our needs at Bloglovin.
 //
 
-var _     = require('lodash');
-var mc    = require('memcached-wrapper');
-var crc32 = require('buffer-crc32');
+var _      = require('lodash');
+var mc     = require('memcached-wrapper');
+var crc32  = require('buffer-crc32');
+var domain = require('domain');
 
 var Memcached = module.exports = function memcached(options) {
   // Set default options
@@ -72,9 +73,51 @@ var methods = ['touch', 'get', 'gets', 'getMulti', 'set', 'replace', 'add',
 _.map(methods, function (method) {
   Memcached.prototype[method] = function (method) {
     return function () {
-      var server = this.hashKey(arguments[0]);
-      server[method].apply(server, arguments);
+      var self = this;
+      var d = domain.create();
+      var args = Array.prototype.slice.call(arguments);
+      var server = this.hashKey(args[0]);
+
+      d.on('error', function (err) {
+        // Find any callback
+        var len = args.length;
+        var cb  = null;
+        for (len; len >= 0; len--) {
+          if (typeof args[len] === 'function') {
+            cb = args[leb];
+            break;
+          }
+        }
+
+        if (cb) {
+          cb(err);
+        }
+        else {
+          //console.error('Memcached error.\n\tServer: %s\n\tArguments: %s\n\t%s', server.Mc.servers, args, err);
+          throw err;
+        }
+      });
+
+      d.run(function () {
+        server[method].apply(server, args);
+      });
     };
   }(method);
 });
+
+//
+// ## Register Plugin
+//
+// Register plugin with Hapi.
+//
+// Options is an object that corresponds to the options outlined in the
+// [docs](https://npmjs.org/package/memcached) for the memcached module.
+//
+Memcached.register = function (plugin, options, next) {
+  var mc = new Memcached(options);
+  plugin.expose('connection', function () {
+    return mc;
+  });
+  next();
+};
 
