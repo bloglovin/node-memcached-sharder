@@ -1,3 +1,6 @@
+/* jshint node: true */
+'use strict';
+
 //
 // # Memcached Lite
 //
@@ -84,7 +87,7 @@ _.map(methods, function (method) {
         var cb  = null;
         for (len; len >= 0; len--) {
           if (typeof args[len] === 'function') {
-            cb = args[leb];
+            cb = args[len];
             break;
           }
         }
@@ -120,4 +123,3 @@ Memcached.register = function (plugin, options, next) {
   });
   next();
 };
-
