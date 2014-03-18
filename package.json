@@ -1,17 +1,23 @@
 {
   "name": "bloglovin-memcached-sharder",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Super simple memcached sharding.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
+  "author": "Simon Ljungberg <hi@iamsim.me>",
+  "contributors": [
+    "Hugo Wetterberg <hugo@wetterberg.nu>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/bloglovin/bloglovin-memcached-sharder.git"
+  },
   "license": "MIT",
   "dependencies": {
-    "lodash": "~2.0.0",
-    "memcached-wrapper": "git://github.com/bloglovin/node-memcached-wrapper#0.0.4",
-    "buffer-crc32": "~0.2.1"
+    "lodash": "^2.4.1",
+    "buffer-crc32": "^0.2.1",
+    "memcached": "^0.2.8"
   }
 }
-
