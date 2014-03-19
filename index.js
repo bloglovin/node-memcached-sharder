@@ -197,23 +197,6 @@ Memcached.prototype.getMulti = function (keys, callback) {
   }
 };
 
-Memcached.prototype.getMultiJson = function(keys, callback) {
-  this.getMulti(keys, function gotResult(error, result) {
-    if (error) return callback(error);
-
-    var parsed = {};
-    for (var key in result) {
-      try {
-        parsed[key] = JSON.parse(result[key]);
-      } catch (ex) {
-        console.error('Failed to parse JSON from memcache in "' + key + '": ' + ex.message);
-      }
-    }
-
-    callback(null, parsed);
-  });
-};
-
 //
 // ## Simulate the memcached module's API
 //
