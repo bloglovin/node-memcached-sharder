@@ -25,10 +25,8 @@ function Memcached(options) {
   this.servers = Memcached.normaliseServers(options.servers);
 
   // Setup connections and hashrings
-  this.connectionFactory = options.connectionFactory || function createConnection(servers, options) {
-    return new lib.memcached(servers, options);
-  };
-  this.connections = this.setupConnections(options.servers, options.options);
+  this.connectionFactory = options.connectionFactory || Memcached.defaultConnectionFactory;
+  this.connections = this.setupConnections(this.servers, options.options);
   this.sumWeight   = _.reduce(this.servers, function addWeight(r, server) {
       return r + server.weight;
     }, 0);
@@ -54,6 +52,15 @@ Memcached.register = function (plugin, options, next) {
     return mc;
   });
   next();
+};
+
+//
+// ## Default connection factory
+//
+// Creates a connection using memcached.
+//
+Memcached.defaultConnectionFactory = function (servers, options) {
+  return new lib.memcached(servers, options);
 };
 
 //
