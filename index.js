@@ -8,6 +8,8 @@
 //
 
 var lib = {
+  util: require('util'),
+  events: require('events'),
   lodash: require('lodash'),
   memcached: require('memcached'),
   crc32: require('buffer-crc32'),
@@ -31,6 +33,8 @@ function Memcached(options) {
       return r + server.weight;
     }, 0);
 }
+lib.util.inherits(Memcached, lib.events.EventEmitter);
+
 module.exports = Memcached;
 
 //
@@ -146,6 +150,8 @@ Memcached.prototype.hostForKey = function (key) {
 Memcached.prototype.getMulti = function (keys, callback) {
   var buckets = {};
   var result = {};
+  var failed = false;
+  var done = false;
 
   // Put the keys in per-host buckets.
   keys.map(this.hostForKey, this).forEach(function addToBucket(host, index) {
@@ -177,29 +183,35 @@ Memcached.prototype.getMulti = function (keys, callback) {
   // Handler function for result that is used with the host bound to the
   // first argument.
   function addResult(host, error, results) {
+    // Guard against failed or finished sessions
+    if (failed || done) return;
+
     // Remove our job, as it's completed
     var jobIndex = jobs.indexOf(host);
     if (jobIndex >= 0) {
       jobs.splice(jobIndex, 1);
-    }
-    else {
-      console.error("Got faulty or duplicate job result for memcache server " + host);
-      return;
-    }
 
-    if (error) {
-      console.error("Failed to fetch batch of keys from memcache server " + host);
-    }
-    else {
-      // Merge in our result.
-      for (var key in results) {
-        result[key] = results[key];
+      if (error) {
+        // We want to allow partial success without going bat shit.
+        console.error("Failed to fetch batch of keys from memcache server " + host);
+      }
+      else {
+        // Merge in our result.
+        for (var key in results) {
+          result[key] = results[key];
+        }
       }
 
       // Return the result if this was the last job.
       if (!jobs.length) {
+        done = true;
         callback(null, result);
       }
+    }
+    else {
+      // Fail hard if we're getting nonsensical data.
+      failed = true;
+      callback(new Error('Got faulty or duplicate job result for memcache server ' + host));
     }
   }
 };
@@ -214,6 +226,7 @@ var methods = ['touch', 'get', 'gets', 'set', 'replace', 'add',
 _.map(methods, function (method) {
   Memcached.prototype[method] = function createWrapperFunction(method) {
     return function shardingWrapper(key) {
+      var self = this;
       var d = lib.domain.create();
       var args = Array.prototype.slice.call(arguments);
       var host = this.hostForKey(key);
@@ -228,8 +241,7 @@ _.map(methods, function (method) {
           callback(err);
         }
         else {
-          //console.error('Memcached error.\n\tServer: %s\n\tArguments: %s\n\t%s', server.Mc.servers, args, err);
-          throw err;
+          self.emit('error', err);
         }
       });
 

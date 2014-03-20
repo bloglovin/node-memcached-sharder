@@ -12,7 +12,12 @@ var assert = lib.assert;
 
 suite('Sharding', function () {
 
-  test('Matches output form PHP implementation', function () {
+  test('Create a default instance', function createInstance() {
+    var m = new lib.sharder();
+    assert.equal(m.servers[0].host, '127.0.0.1:11211', 'The default server wasn\'t set to localhost');
+  });
+
+  test('Matches output form PHP implementation', function checkSharder() {
     // Create dummy connections
     function connFactory(options) {
       return {};
@@ -77,7 +82,7 @@ suite('Sharding', function () {
   });
 });
 
-suite('Basic commands', function() {
+suite('Basic commands', function basicCommandsTest() {
   var m = new lib.sharder({
     servers: '127.0.0.1:11211',
     options: {
@@ -118,11 +123,21 @@ suite('Basic commands', function() {
   });
 });
 
-suite('Batch fetch', function runCommands(done) {
+suite('Batch fetch', function batchFetchTests(done) {
   var m = new lib.sharder({
-    servers: '127.0.0.1:11211',
+    servers: [
+      '127.0.0.1:11211',
+      '127.0.0.1:11311',
+      '127.0.0.1:11411'
+    ],
     options: {
       namespace: 'mc:sharder-test:'
+    },
+    // We want to test the sharding in combination with multi-fetch, but not
+    // deal with setting up multiple memcache instances for it, so change all
+    // hosts to localhost:11211.
+    connectionFactory: function useLocalhost(servers, options) {
+      return lib.sharder.defaultConnectionFactory('127.0.0.1:11211', options);
     }
   });
 
@@ -130,7 +145,10 @@ suite('Batch fetch', function runCommands(done) {
     var values = {
       'multi-a': 'a',
       'multi-b': 'b',
-      'multi-c': 'c'
+      'multi-c': 'c',
+      'multi-d': 'd',
+      'multi-e': 'e',
+      'multi-f': 'f'
     };
     var keys = Object.getOwnPropertyNames(values);
 
@@ -160,5 +178,85 @@ suite('Batch fetch', function runCommands(done) {
         }
       ], done);
     };
+  });
+});
+
+suite('Error handling', function errorHandlingTest() {
+  var m = new lib.sharder({
+    servers: [
+      {host:'127.0.0.1:11211'},
+      {host:'127.0.0.1:11311'},
+      {host:'127.0.0.1:11411'}
+    ],
+    connectionFactory: function getFailer() {
+      return {
+        get: function(key, callback) {
+          callback(new Error('Simulated error'));
+        },
+        set: function(key, value, ttl, callback) {
+          setTimeout(function triggerRuntimeError() {
+            var object;
+            callback(null, object.result);
+          }, 1);
+        },
+        getMulti: function(keys, callback) {
+          console.log(keys);
+          setTimeout(function triggerFaultyBehaviour() {
+            if (keys[0] == 'error') {
+              callback(new Error('Simulated error'));
+            }
+            else if (keys[0] == 'duplicate') {
+              callback(null, {});
+              callback(null, {});
+              callback(null, {});
+            }
+          }, 1);
+        }
+      };
+    }
+  });
+
+  test('Errors get propagated', function runCommands() {
+    m.get('foobar-key', function handleError(error) {
+      assert(error, 'The get command didn\'t return an error as it should');
+    });
+  });
+
+  test('Exception get caught and propagated', function runCommands() {
+    m.set('foobar-key', 'bux', 10, function handleError(error) {
+      assert(error, 'The set command didn\'t return an error as it should');
+    });
+  });
+
+  test('Check multi errors', function runCommands(done) {
+    m.getMulti(
+      ['error', 'signifies', 'that an error ', 'should be triggered'],
+      function handleError(error) {
+        assert.equal(error, null, 'Multi shouldn\'t return an error just because one shard fails');
+        done();
+      });
+  });
+
+  test('Check multi processing errors', function runCommands(done) {
+    m.getMulti(
+      ['duplicate', 'signifies that', 'the batch processing', 'should be sabotaged'],
+      function handleError(error) {
+        assert(error, 'The get multi didn\'t return an error as it should');
+        done();
+      });
+  });
+
+  test('Exceptions will be emitted when we don\'t have a callback', function runCommands(done) {
+    var gotException = false;
+
+    m.set('foobar-key');
+    m.once('error', function handleException(error) {
+      gotException = true;
+    });
+
+    setTimeout(function () {
+      assert(gotException, 'The exception didn\'t get emitted as expected');
+      done();
+    }, 10);
   });
 });
