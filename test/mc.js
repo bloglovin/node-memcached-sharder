@@ -200,7 +200,6 @@ suite('Error handling', function errorHandlingTest() {
           }, 1);
         },
         getMulti: function(keys, callback) {
-          console.log(keys);
           setTimeout(function triggerFaultyBehaviour() {
             if (keys[0] == 'error') {
               callback(new Error('Simulated error'));
@@ -208,6 +207,9 @@ suite('Error handling', function errorHandlingTest() {
             else if (keys[0] == 'duplicate') {
               callback(null, {});
               callback(null, {});
+              callback(null, {});
+            }
+            else {
               callback(null, {});
             }
           }, 1);
@@ -229,10 +231,22 @@ suite('Error handling', function errorHandlingTest() {
   });
 
   test('Check multi errors', function runCommands(done) {
+    var gotError = false;
+
+    function registerError(error) {
+      console.log(error);
+      gotError = true;
+    }
+
+    m.on('error', registerError);
+
     m.getMulti(
       ['error', 'signifies', 'that an error ', 'should be triggered'],
       function handleError(error) {
         assert.equal(error, null, 'Multi shouldn\'t return an error just because one shard fails');
+        assert(gotError, 'The failed batch didn\'t trigger an error on the connection as it should have');
+
+        m.removeListener('error', registerError);
         done();
       });
   });

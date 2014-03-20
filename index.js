@@ -148,6 +148,7 @@ Memcached.prototype.hostForKey = function (key) {
 };
 
 Memcached.prototype.getMulti = function (keys, callback) {
+  var self = this;
   var buckets = {};
   var result = {};
   var failed = false;
@@ -193,7 +194,10 @@ Memcached.prototype.getMulti = function (keys, callback) {
 
       if (error) {
         // We want to allow partial success without going bat shit.
-        console.error("Failed to fetch batch of keys from memcache server " + host);
+        self.emit('error', new Error(
+          'Failed to fetch batch of keys ' +
+          JSON.stringify(buckets[host]) +
+          ' from memcache server ' + host));
       }
       else {
         // Merge in our result.
