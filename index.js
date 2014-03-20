@@ -1,24 +1,101 @@
+/* jshint node: true */
+'use strict';
+
 //
 // # Memcached Lite
 //
 // Super simple memcached client tailored to our needs at Bloglovin.
 //
 
-var _      = require('lodash');
-var mc     = require('memcached-wrapper');
-var crc32  = require('buffer-crc32');
-var domain = require('domain');
+var lib = {
+  util: require('util'),
+  events: require('events'),
+  lodash: require('lodash'),
+  memcached: require('memcached'),
+  crc32: require('buffer-crc32'),
+  domain: require('domain')
+};
+var _ = lib.lodash;
 
-var Memcached = module.exports = function memcached(options) {
+function Memcached(options) {
   // Set default options
   options = typeof options === 'object' ? options : {};
-  options.servers = options.servers || [ { uri: '127.0.0.1:11211', weight: 1 } ];
+  options.options = options.options || {};
+
+  // Normalise our incoming server list
+  options.servers = options.servers || [{ host: '127.0.0.1:11211', weight: 1 }];
+  this.servers = Memcached.normaliseServers(options.servers);
 
   // Setup connections and hashrings
-  var config     = options.options || {};
-  this.sumWeight = _.reduce(options.servers, function (r, i) { return r + i.weight; }, 0);
-  this.conns     = this.setupConnections(_.map(options.servers, 'uri'), config);
-  this.servers   = options.servers;
+  this.connectionFactory = options.connectionFactory || Memcached.defaultConnectionFactory;
+  this.connections = this.setupConnections(this.servers, options.options);
+  this.sumWeight   = _.reduce(this.servers, function addWeight(r, server) {
+      return r + server.weight;
+    }, 0);
+}
+lib.util.inherits(Memcached, lib.events.EventEmitter);
+
+module.exports = Memcached;
+
+//
+// ## Register Plugin
+//
+// Register plugin with Hapi.
+//
+// Options should have two keys: "servers" and "options".
+//
+// "servers" can be a host string: "127.0.0.1:11211"; a server spec object:
+// `{"host":"127.0.0.1:11211", weight: 100}`; or an array of either.
+//
+// "options" is an object that corresponds to the options outlined in the
+// [docs](https://npmjs.org/package/memcached) for the memcached module.
+//
+Memcached.register = function (plugin, options, next) {
+  var mc = new Memcached(options);
+  plugin.expose('connection', function returnConnection() {
+    return mc;
+  });
+  next();
+};
+
+//
+// ## Default connection factory
+//
+// Creates a connection using memcached.
+//
+Memcached.defaultConnectionFactory = function (servers, options) {
+  return new lib.memcached(servers, options);
+};
+
+//
+// ## Normalise server list
+//
+// Turns the permitted server option formats into the full [{host:"",weight:0}]
+// format.
+//
+Memcached.normaliseServers = function (servers) {
+  if (!Array.isArray(servers)) {
+    servers = [servers];
+  }
+
+  servers = _.map(servers, function normalise(server) {
+    if (typeof server == 'string') {
+      server = { host: server, weight: 1 };
+    }
+    else {
+      if (server.weight === undefined) {
+        server.weight = 1;
+      }
+      if (server.uri) {
+        server.host = server.uri;
+        delete server.uri;
+      }
+    }
+
+    return server;
+  });
+
+  return servers;
 };
 
 //
@@ -26,39 +103,119 @@ var Memcached = module.exports = function memcached(options) {
 //
 // Opens connections to each server.
 //
-// * **servers**, _an array of IP:ports._
+// * **servers**, _an array of server objects._
 //
-// **Returns** an object with connections keyed to ip.
+// **Returns** an object with connections keyed to host.
 //
 Memcached.prototype.setupConnections = function setupConnections(servers, config) {
-  var connections = [];
-  _.map(servers, function (server) {
+  var connect = this.connectionFactory;
+  var connections = {};
+
+  servers.forEach(function createConnection(server) {
     var opts = _.cloneDeep(config);
-    connections.push(mc({ servers: server, options: opts }));
+    connections[server.host] = connect(server.host, opts);
   });
+
   return connections;
 };
 
 //
 // ## Hash key
 //
-// Hashes the key and returns the correct server.
+// Hashes the key and returns the correct server host.
 //
 // * **key**, _a key to hash._
 //
-// **Returns** a memcached connection object.
+// **Returns** the host for the selected shard.
 //
-Memcached.prototype.hashKey = function hashKey(key) {
-  var checksum = crc32.unsigned(key);
+Memcached.prototype.hostForKey = function (key) {
+  var checksum = lib.crc32.unsigned(key);
   var index    = checksum % this.sumWeight;
+  var selected;
 
-  for (var i in this.servers) {
-    var server = this.servers[i];
+  for (var idx in this.servers) {
+    var server = this.servers[idx];
     if (index < server.weight) {
-      return this.conns[i];
+      selected = server.host;
+      break;
     }
     else {
       index -= server.weight;
+    }
+  }
+
+  return selected;
+};
+
+Memcached.prototype.getMulti = function (keys, callback) {
+  var self = this;
+  var buckets = {};
+  var result = {};
+  var failed = false;
+  var done = false;
+
+  // Put the keys in per-host buckets.
+  keys.map(this.hostForKey, this).forEach(function addToBucket(host, index) {
+    buckets[host] = buckets[host] || [];
+    buckets[host].push(keys[index]);
+  });
+
+  // Send off a getMulti for each host.
+  var jobs = [];
+  _.forOwn(buckets, function getData(bucket, host) {
+    jobs.push(host);
+    if (bucket.length > 1) {
+      this.connections[host].getMulti(bucket, addResult.bind(this, host));
+    }
+    else {
+      this.connections[host].get(bucket[0], function singleResult(error, result) {
+        var results;
+
+        if (!error) {
+          results = {};
+          results[bucket[0]] = result;
+        }
+
+        addResult(host, error, results);
+      });
+    }
+  }, this);
+
+  // Handler function for result that is used with the host bound to the
+  // first argument.
+  function addResult(host, error, results) {
+    // Guard against failed or finished sessions
+    if (failed || done) return;
+
+    // Remove our job, as it's completed
+    var jobIndex = jobs.indexOf(host);
+    if (jobIndex >= 0) {
+      jobs.splice(jobIndex, 1);
+
+      if (error) {
+        // We want to allow partial success without going bat shit.
+        self.emit('error', new Error(
+          'Failed to fetch batch of keys ' +
+          JSON.stringify(buckets[host]) +
+          ' from memcache server ' + host));
+      }
+      else {
+        // Merge in our result.
+        for (var key in results) {
+          result[key] = results[key];
+        }
+      }
+
+      // Return the result if this was the last job.
+      if (!jobs.length) {
+        done = true;
+        callback(null, result);
+      }
+    }
+    else {
+      // Fail hard if we're getting nonsensical data.
+      failed = true;
+      callback(new Error('Got faulty or duplicate job result for memcache server ' + host));
     }
   }
 };
@@ -68,56 +225,33 @@ Memcached.prototype.hashKey = function hashKey(key) {
 //
 // Dynamically create prototype methods for the memcached API.
 //
-var methods = ['touch', 'get', 'gets', 'getMulti', 'set', 'replace', 'add',
+var methods = ['touch', 'get', 'gets', 'set', 'replace', 'add',
     'cas', 'append', 'prepend', 'incr', 'decr', 'remove'];
 _.map(methods, function (method) {
-  Memcached.prototype[method] = function (method) {
-    return function () {
+  Memcached.prototype[method] = function createWrapperFunction(method) {
+    return function shardingWrapper(key) {
       var self = this;
-      var d = domain.create();
+      var d = lib.domain.create();
       var args = Array.prototype.slice.call(arguments);
-      var server = this.hashKey(args[0]);
+      var host = this.hostForKey(key);
+      var connection = this.connections[host];
 
-      d.on('error', function (err) {
-        // Find any callback
-        var len = args.length;
-        var cb  = null;
-        for (len; len >= 0; len--) {
-          if (typeof args[len] === 'function') {
-            cb = args[leb];
-            break;
-          }
-        }
+      d.on('error', function onDomainError(err) {
+        // Check for a callback
+        var lastArgument = args[args.length-1];
+        var callback  = typeof lastArgument === 'function' ? lastArgument : null;
 
-        if (cb) {
-          cb(err);
+        if (callback) {
+          callback(err);
         }
         else {
-          //console.error('Memcached error.\n\tServer: %s\n\tArguments: %s\n\t%s', server.Mc.servers, args, err);
-          throw err;
+          self.emit('error', err);
         }
       });
 
-      d.run(function () {
-        server[method].apply(server, args);
+      d.run(function runMemcachedCommand() {
+        connection[method].apply(connection, args);
       });
     };
   }(method);
 });
-
-//
-// ## Register Plugin
-//
-// Register plugin with Hapi.
-//
-// Options is an object that corresponds to the options outlined in the
-// [docs](https://npmjs.org/package/memcached) for the memcached module.
-//
-Memcached.register = function (plugin, options, next) {
-  var mc = new Memcached(options);
-  plugin.expose('connection', function () {
-    return mc;
-  });
-  next();
-};
-
