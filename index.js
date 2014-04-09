@@ -186,6 +186,44 @@ Memcached.prototype.delMulti = function (keys, callback) {
   }, callback);
 };
 
+Memcached.prototype.setMulti = function (values, ttl, callback) {
+  var self = this;
+  var buckets = {};
+  var keys = Object.keys(values);
+
+  // Put the keys in per-host buckets.
+  keys.map(this.hostForKey, this).forEach(function addToBucket(host, index) {
+    buckets[host] = buckets[host] || [];
+    buckets[host].push(keys[index]);
+  });
+
+  // Run one series of delete ops per server.
+  lib.async.each(Object.keys(buckets), function deleteKeysOnHost(host, hostDone) {
+    var keys = buckets[host];
+    var encounteredErrors = [];
+
+    // Run the individual set ops and store failed sets for logging
+    lib.async.eachSeries(keys, function deleteKey(key, deleteDone) {
+      self.connections[host].set(key, values[key], ttl, function delResult(error) {
+        if (error) {
+          encounteredErrors.push(key);
+        }
+        deleteDone();
+      });
+    }, function hostResult() {
+      // Just log delete failures
+      if (encounteredErrors.length) {
+        self.emit('error', new Error(
+          'Failed to set keys ' +
+          JSON.stringify(encounteredErrors) +
+          ' on memcache server ' + host));
+      }
+
+      hostDone();
+    });
+  }, callback);
+};
+
 Memcached.prototype.getMulti = function (keys, callback) {
   var self = this;
   var buckets = {};
