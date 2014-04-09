@@ -1,6 +1,6 @@
 {
   "name": "bloglovin-memcached-sharder",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Super simple memcached sharding.",
   "main": "index.js",
   "scripts": {
