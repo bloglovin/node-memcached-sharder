@@ -8,9 +8,11 @@
 //
 
 var lib = {
+  assert: require('assert'),
   util: require('util'),
   events: require('events'),
   lodash: require('lodash'),
+  async: require('async'),
   memcached: require('memcached'),
   crc32: require('buffer-crc32'),
   domain: require('domain')
@@ -147,6 +149,81 @@ Memcached.prototype.hostForKey = function (key) {
   return selected;
 };
 
+Memcached.prototype.delMulti = function (keys, callback) {
+  var self = this;
+  var buckets = {};
+
+  // Put the keys in per-host buckets.
+  keys.map(this.hostForKey, this).forEach(function addToBucket(host, index) {
+    buckets[host] = buckets[host] || [];
+    buckets[host].push(keys[index]);
+  });
+
+  // Run one series of delete ops per server.
+  lib.async.each(Object.keys(buckets), function deleteKeysOnHost(host, hostDone) {
+    var keys = buckets[host];
+    var encounteredErrors = [];
+
+    // Run the individual delete ops and store failed deletes for logging
+    lib.async.eachSeries(keys, function deleteKey(key, deleteDone) {
+      self.connections[host].del(key, function delResult(error) {
+        if (error) {
+          encounteredErrors.push(key);
+        }
+        deleteDone();
+      });
+    }, function hostResult() {
+      // Just log delete failures
+      if (encounteredErrors.length) {
+        self.emit('error', new Error(
+          'Failed to delete keys ' +
+          JSON.stringify(encounteredErrors) +
+          ' from memcache server ' + host));
+      }
+
+      hostDone();
+    });
+  }, callback);
+};
+
+Memcached.prototype.setMulti = function (values, ttl, callback) {
+  var self = this;
+  var buckets = {};
+  var keys = Object.keys(values);
+
+  // Put the keys in per-host buckets.
+  keys.map(this.hostForKey, this).forEach(function addToBucket(host, index) {
+    buckets[host] = buckets[host] || [];
+    buckets[host].push(keys[index]);
+  });
+
+  // Run one series of delete ops per server.
+  lib.async.each(Object.keys(buckets), function deleteKeysOnHost(host, hostDone) {
+    var keys = buckets[host];
+    var encounteredErrors = [];
+
+    // Run the individual set ops and store failed sets for logging
+    lib.async.eachSeries(keys, function deleteKey(key, deleteDone) {
+      self.connections[host].set(key, values[key], ttl, function delResult(error) {
+        if (error) {
+          encounteredErrors.push(key);
+        }
+        deleteDone();
+      });
+    }, function hostResult() {
+      // Just log delete failures
+      if (encounteredErrors.length) {
+        self.emit('error', new Error(
+          'Failed to set keys ' +
+          JSON.stringify(encounteredErrors) +
+          ' on memcache server ' + host));
+      }
+
+      hostDone();
+    });
+  }, callback);
+};
+
 Memcached.prototype.getMulti = function (keys, callback) {
   var self = this;
   var buckets = {};
@@ -226,10 +303,12 @@ Memcached.prototype.getMulti = function (keys, callback) {
 // Dynamically create prototype methods for the memcached API.
 //
 var methods = ['touch', 'get', 'gets', 'set', 'replace', 'add',
-    'cas', 'append', 'prepend', 'incr', 'decr', 'remove'];
+    'cas', 'append', 'prepend', 'incr', 'decr', 'del'];
 _.map(methods, function (method) {
   Memcached.prototype[method] = function createWrapperFunction(method) {
     return function shardingWrapper(key) {
+      lib.assert.equal(typeof key, 'string', 'The key argument must be a string');
+
       var self = this;
       var d = lib.domain.create();
       var args = Array.prototype.slice.call(arguments);

@@ -106,24 +106,27 @@ suite('Basic commands', function basicCommandsTest() {
   });
 
   test('Set and wait for expire', function runCommands(done) {
-    lib.async.auto({
-      setItem: function setItem(callback) {
+    this.timeout(3000);
+
+    lib.async.series([
+      function setItem(callback) {
         m.set('expire-test', 'foo', 1, callback);
       },
-      getItem: ['setItem', function getItem(callback) {
-        setTimeout(function checkExpired() {
-          m.get('expire-test', function getResult(error, value) {
-            if (error) return callback(error);
-            assert.equal(value, false);
-            done();
-          });
-        }, 1100);
-      }],
-    }, done);
+      function waitABit(callback) {
+        setTimeout(callback, 2000);
+      },
+      function getItem(callback) {
+        m.get('expire-test', function getResult(error, value) {
+          if (error) return callback(error);
+          assert.equal(value, false);
+          callback();
+        });
+      },
+    ], done);
   });
 });
 
-suite('Batch fetch', function batchFetchTests(done) {
+suite('Multi operations', function batchFetchTests(done) {
   var m = new lib.sharder({
     servers: [
       '127.0.0.1:11211',
@@ -141,23 +144,20 @@ suite('Batch fetch', function batchFetchTests(done) {
     }
   });
 
-  test('Fetch multiple values', function runCommands(done) {
+  test('Set and fetch multiple values', function runCommands(done) {
     var values = {
-      'multi-a': 'a',
-      'multi-b': 'b',
-      'multi-c': 'c',
-      'multi-d': 'd',
-      'multi-e': 'e',
-      'multi-f': 'f'
+      'multi-a': ['a'],
+      'multi-b': ['b'],
+      'multi-c': ['c'],
+      'multi-d': ['d'],
+      'multi-e': ['e'],
+      'multi-f': ['f']
     };
-    var keys = Object.getOwnPropertyNames(values);
+    var keys = Object.keys(values);
 
-    var queue = lib.async.queue(function setKey(key, callback) {
-      m.set(key, values[key], 5, callback);
-    }, 1);
+    m.setMulti(values, 5, fetchItems);
 
-    queue.push(keys);
-    queue.drain = function fetchItems(error) {
+    function fetchItems(error) {
       if (error) return done(error);
 
       lib.async.series([
@@ -172,16 +172,49 @@ suite('Batch fetch', function batchFetchTests(done) {
           m.getMulti(['multi-a'], function multiResult(error, result) {
             if (error) return callback(error);
             assert.equal(typeof result, 'object', 'Get multi didn\'t return an object');
-            assert.equal(result['multi-a'], values['multi-a'], 'Get multi didn\'t return the correct value when fetching a single object');
+            assert.deepEqual(result['multi-a'], values['multi-a'], 'Get multi didn\'t return the correct value when fetching a single object');
             callback();
           });
         }
       ], done);
+    }
+  });
+
+  test('Set and delete multiple values', function runCommands(done) {
+    var values = {
+      'multi-del-a': ['a'],
+      'multi-del-b': ['b'],
+      'multi-del-c': ['c'],
+      'multi-del-d': ['d'],
+      'multi-del-e': ['e'],
+      'multi-del-f': ['f']
     };
+    var keys = Object.keys(values);
+
+    m.setMulti(values, 5, deleteItems);
+
+    function deleteItems(error) {
+      if (error) return done(error);
+
+      m.delMulti(keys, fetchItems);
+    }
+
+    function fetchItems(error) {
+      if (error) return done(error);
+
+      m.getMulti(keys, function multiResult(error, result) {
+        if (error) return done(error);
+
+        assert.equal(Object.keys(result).length, 0, 'All items were not deleted');
+
+        done();
+      });
+    }
   });
 });
 
 suite('Error handling', function errorHandlingTest() {
+  var runtimeError = true;
   var m = new lib.sharder({
     servers: [
       {host:'127.0.0.1:11211'},
@@ -193,11 +226,19 @@ suite('Error handling', function errorHandlingTest() {
         get: function(key, callback) {
           callback(new Error('Simulated error'));
         },
+        del: function(key, callback) {
+          callback(new Error('Simulated error'));
+        },
         set: function(key, value, ttl, callback) {
-          setTimeout(function triggerRuntimeError() {
-            var object;
-            callback(null, object.result);
-          }, 1);
+          if (runtimeError) {
+            setTimeout(function triggerRuntimeError() {
+              var object;
+              callback(null, object.result);
+            }, 1);
+          }
+          else {
+            callback(new Error('Simulated error'));
+          }
         },
         getMulti: function(keys, callback) {
           setTimeout(function triggerFaultyBehaviour() {
@@ -230,11 +271,10 @@ suite('Error handling', function errorHandlingTest() {
     });
   });
 
-  test('Check multi errors', function runCommands(done) {
+  test('Check get multi errors', function runCommands(done) {
     var gotError = false;
 
     function registerError(error) {
-      console.log(error);
       gotError = true;
     }
 
@@ -251,7 +291,7 @@ suite('Error handling', function errorHandlingTest() {
       });
   });
 
-  test('Check multi processing errors', function runCommands(done) {
+  test('Check get multi processing errors', function runCommands(done) {
     m.getMulti(
       ['duplicate', 'signifies that', 'the batch processing', 'should be sabotaged'],
       function handleError(error) {
@@ -260,10 +300,58 @@ suite('Error handling', function errorHandlingTest() {
       });
   });
 
+  test('Check delete multi errors', function runCommands(done) {
+    var gotError = false;
+
+    function registerError(error) {
+      gotError = true;
+    }
+
+    m.on('error', registerError);
+
+    m.delMulti(
+      ['error', 'signifies', 'that an error ', 'should be triggered'],
+      function handleError(error) {
+        assert.equal(error, null, 'Multi shouldn\'t return an error just because one shard fails');
+        assert(gotError, 'The failed batch didn\'t trigger an error on the connection as it should have');
+
+        m.removeListener('error', registerError);
+        done();
+      });
+  });
+
+  test('Check set multi errors', function runCommands(done) {
+    var gotError = false;
+    runtimeError = false;
+
+    function registerError(error) {
+      gotError = true;
+    }
+
+    m.on('error', registerError);
+
+    m.setMulti(
+      {
+        'error': 1,
+        'signifies': 2,
+        'that an error ': 3,
+        'should be triggered': 4
+      }, 5,
+      function handleError(error) {
+        assert.equal(error, null, 'Multi shouldn\'t return an error just because one shard fails');
+        assert(gotError, 'The failed batch didn\'t trigger an error on the connection as it should have');
+
+        m.removeListener('error', registerError);
+        done();
+      });
+  });
+
   test('Exceptions will be emitted when we don\'t have a callback', function runCommands(done) {
+    runtimeError = true;
     var gotException = false;
 
-    m.set('foobar-key');
+    m.set('foobar-key', 52, 2);
+
     m.once('error', function handleException(error) {
       gotException = true;
     });

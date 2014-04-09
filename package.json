@@ -17,14 +17,13 @@
   "license": "MIT",
   "dependencies": {
     "lodash": "^2.4.1",
+    "async": "^0.2.10",
     "buffer-crc32": "^0.2.1",
     "memcached": "^0.2.8"
   },
   "devDependencies": {
     "mocha": "^1.18.2",
     "istanbul": "^0.2.6",
-    "hapi": "^3.0.1",
-    "assert": "^1.1.1",
-    "async": "^0.2.10"
+    "hapi": "^3.0.1"
   }
 }
