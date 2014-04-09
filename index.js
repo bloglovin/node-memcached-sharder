@@ -227,7 +227,7 @@ Memcached.prototype.getMulti = function (keys, callback) {
 // Dynamically create prototype methods for the memcached API.
 //
 var methods = ['touch', 'get', 'gets', 'set', 'replace', 'add',
-    'cas', 'append', 'prepend', 'incr', 'decr', 'remove'];
+    'cas', 'append', 'prepend', 'incr', 'decr', 'del'];
 _.map(methods, function (method) {
   Memcached.prototype[method] = function createWrapperFunction(method) {
     return function shardingWrapper(key) {
