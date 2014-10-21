@@ -59,6 +59,9 @@ Memcached.register = function (plugin, options, next) {
   });
   next();
 };
+Memcached.register.attributes = {
+  pkg: require('./package'),
+};
 
 //
 // ## Default connection factory
