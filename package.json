@@ -1,12 +1,13 @@
 {
   "name": "bloglovin-memcached-sharder",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Super simple memcached sharding.",
   "main": "index.js",
   "scripts": {
     "test": "node_modules/.bin/istanbul cover node_modules/.bin/_mocha -- --ui tdd -R spec"
   },
   "author": "Simon Ljungberg <hi@iamsim.me>",
+  "homepage": "https://github.com/bloglovin/bloglovin-memcached-sharder",
   "contributors": [
     "Hugo Wetterberg <hugo@wetterberg.nu>"
   ],
