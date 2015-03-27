@@ -7,17 +7,14 @@
 // Super simple memcached client tailored to our needs at Bloglovin.
 //
 
-var lib = {
-  assert: require('assert'),
-  util: require('util'),
-  events: require('events'),
-  lodash: require('lodash'),
-  async: require('async'),
-  memcached: require('memcached'),
-  crc32: require('buffer-crc32'),
-  domain: require('domain')
-};
-var _ = lib.lodash;
+var assert = require('assert');
+var util = require('util');
+var events = require('events');
+var async = require('async');
+var EdenMemcached = require('memcached');
+var crc32 = require('buffer-crc32');
+var domain = require('domain');
+var _ = require('lodash');
 
 function Memcached(options) {
   // Set default options
@@ -35,7 +32,7 @@ function Memcached(options) {
       return r + server.weight;
     }, 0);
 }
-lib.util.inherits(Memcached, lib.events.EventEmitter);
+util.inherits(Memcached, events.EventEmitter);
 
 module.exports = Memcached;
 
@@ -52,15 +49,15 @@ module.exports = Memcached;
 // "options" is an object that corresponds to the options outlined in the
 // [docs](https://npmjs.org/package/memcached) for the memcached module.
 //
-Memcached.register = function (plugin, options, next) {
+Memcached.register = function (server, options, next) {
   var mc = new Memcached(options);
-  plugin.expose('connection', function returnConnection() {
+  server.expose('connection', function returnConnection() {
     return mc;
   });
   next();
 };
 Memcached.register.attributes = {
-  pkg: require('./package'),
+  pkg: require('./package.json'),
 };
 
 //
@@ -69,7 +66,7 @@ Memcached.register.attributes = {
 // Creates a connection using memcached.
 //
 Memcached.defaultConnectionFactory = function (servers, options) {
-  return new lib.memcached(servers, options);
+  return new EdenMemcached(servers, options);
 };
 
 //
@@ -84,10 +81,9 @@ Memcached.normaliseServers = function (servers) {
   }
 
   servers = _.map(servers, function normalise(server) {
-    if (typeof server == 'string') {
+    if (typeof server === 'string') {
       server = { host: server, weight: 1 };
-    }
-    else {
+    } else {
       if (server.weight === undefined) {
         server.weight = 1;
       }
@@ -134,7 +130,7 @@ Memcached.prototype.setupConnections = function setupConnections(servers, config
 // **Returns** the host for the selected shard.
 //
 Memcached.prototype.hostForKey = function (key) {
-  var checksum = lib.crc32.unsigned(key);
+  var checksum = crc32.unsigned(key);
   var index    = checksum % this.sumWeight;
   var selected;
 
@@ -143,8 +139,7 @@ Memcached.prototype.hostForKey = function (key) {
     if (index < server.weight) {
       selected = server.host;
       break;
-    }
-    else {
+    } else {
       index -= server.weight;
     }
   }
@@ -163,12 +158,12 @@ Memcached.prototype.delMulti = function (keys, callback) {
   });
 
   // Run one series of delete ops per server.
-  lib.async.each(Object.keys(buckets), function deleteKeysOnHost(host, hostDone) {
+  async.each(Object.keys(buckets), function deleteKeysOnHost(host, hostDone) {
     var keys = buckets[host];
     var encounteredErrors = [];
 
     // Run the individual delete ops and store failed deletes for logging
-    lib.async.eachSeries(keys, function deleteKey(key, deleteDone) {
+    async.eachSeries(keys, function deleteKey(key, deleteDone) {
       self.connections[host].del(key, function delResult(error) {
         if (error) {
           encounteredErrors.push(key);
@@ -201,12 +196,12 @@ Memcached.prototype.setMulti = function (values, ttl, callback) {
   });
 
   // Run one series of delete ops per server.
-  lib.async.each(Object.keys(buckets), function deleteKeysOnHost(host, hostDone) {
+  async.each(Object.keys(buckets), function deleteKeysOnHost(host, hostDone) {
     var keys = buckets[host];
     var encounteredErrors = [];
 
     // Run the individual set ops and store failed sets for logging
-    lib.async.eachSeries(keys, function deleteKey(key, deleteDone) {
+    async.eachSeries(keys, function deleteKey(key, deleteDone) {
       self.connections[host].set(key, values[key], ttl, function delResult(error) {
         if (error) {
           encounteredErrors.push(key);
@@ -246,8 +241,7 @@ Memcached.prototype.getMulti = function (keys, callback) {
     jobs.push(host);
     if (bucket.length > 1) {
       this.connections[host].getMulti(bucket, addResult.bind(this, host));
-    }
-    else {
+    } else {
       this.connections[host].get(bucket[0], function singleResult(error, result) {
         var results;
 
@@ -265,7 +259,7 @@ Memcached.prototype.getMulti = function (keys, callback) {
   // first argument.
   function addResult(host, error, results) {
     // Guard against failed or finished sessions
-    if (failed || done) return;
+    if (failed || done) { return; }
 
     // Remove our job, as it's completed
     var jobIndex = jobs.indexOf(host);
@@ -278,8 +272,7 @@ Memcached.prototype.getMulti = function (keys, callback) {
           'Failed to fetch batch of keys ' +
           JSON.stringify(buckets[host]) +
           ' from memcache server ' + host));
-      }
-      else {
+      } else {
         // Merge in our result.
         for (var key in results) {
           result[key] = results[key];
@@ -291,8 +284,7 @@ Memcached.prototype.getMulti = function (keys, callback) {
         done = true;
         callback(null, result);
       }
-    }
-    else {
+    } else {
       // Fail hard if we're getting nonsensical data.
       failed = true;
       callback(new Error('Got faulty or duplicate job result for memcache server ' + host));
@@ -308,25 +300,24 @@ Memcached.prototype.getMulti = function (keys, callback) {
 var methods = ['touch', 'get', 'gets', 'set', 'replace', 'add',
     'cas', 'append', 'prepend', 'incr', 'decr', 'del'];
 _.map(methods, function (method) {
-  Memcached.prototype[method] = function createWrapperFunction(method) {
+  Memcached.prototype[method] = (function createWrapperFunction(method) {
     return function shardingWrapper(key) {
-      lib.assert.equal(typeof key, 'string', 'The key argument must be a string');
+      assert.equal(typeof key, 'string', 'The key argument must be a string');
 
       var self = this;
-      var d = lib.domain.create();
+      var d = domain.create();
       var args = Array.prototype.slice.call(arguments);
       var host = this.hostForKey(key);
       var connection = this.connections[host];
 
       d.on('error', function onDomainError(err) {
         // Check for a callback
-        var lastArgument = args[args.length-1];
+        var lastArgument = args[args.length - 1];
         var callback  = typeof lastArgument === 'function' ? lastArgument : null;
 
         if (callback) {
           callback(err);
-        }
-        else {
+        } else {
           self.emit('error', err);
         }
       });
@@ -335,5 +326,5 @@ _.map(methods, function (method) {
         connection[method].apply(connection, args);
       });
     };
-  }(method);
+  })(method);
 });

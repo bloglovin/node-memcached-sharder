@@ -4,7 +4,9 @@
   "description": "Super simple memcached sharding.",
   "main": "index.js",
   "scripts": {
-    "test": "node_modules/.bin/istanbul cover node_modules/.bin/_mocha -- --ui tdd -R spec"
+    "test": "node -e \"require('grunt').tasks(['test']);\"",
+    "test-all": "node -e \"require('grunt').tasks(['test-all']);\"",
+    "prepush": "npm test"
   },
   "author": "Simon Ljungberg <hi@iamsim.me>",
   "homepage": "https://github.com/bloglovin/bloglovin-memcached-sharder",
@@ -17,14 +19,15 @@
   },
   "license": "MIT",
   "dependencies": {
-    "lodash": "^2.4.1",
     "async": "^0.2.10",
-    "buffer-crc32": "^0.2.1",
-    "memcached": "^0.2.8"
+    "buffer-crc32": "^0.2.5",
+    "lodash": "^2.4.1",
+    "memcached": "^2.1.0"
   },
   "devDependencies": {
-    "mocha": "^1.18.2",
-    "istanbul": "^0.2.6",
-    "hapi": "^3.0.1"
+    "hapi": "^8.4.0",
+    "istanbul": "^0.3.11",
+    "lintlovin": "^1.15.0",
+    "mocha": "^1.21.5"
   }
 }

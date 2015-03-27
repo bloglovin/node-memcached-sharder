@@ -1,30 +1,30 @@
+/* jshint node: true */
+/* globals suite, test */
+'use strict';
+
 //
 // # Test MC lite
 //
 
-var lib = {
-  assert: require('assert'),
-  memcached: require('memcached'),
-  async: require('async'),
-  sharder: require('../')
-};
-var assert = lib.assert;
+var assert = require('assert');
+var async = require('async');
+var Sharder = require('../');
 
 suite('Sharding', function () {
 
   test('Create a default instance', function createInstance() {
-    var m = new lib.sharder();
+    var m = new Sharder();
     assert.equal(m.servers[0].host, '127.0.0.1:11211', 'The default server wasn\'t set to localhost');
   });
 
   test('Matches output form PHP implementation', function checkSharder() {
     // Create dummy connections
-    function connFactory(options) {
+    function connFactory() {
       return {};
     }
 
     // Servers
-    var m = new lib.sharder({
+    var m = new Sharder({
       servers: [
         { uri: '192.168.1.140:11211', weight: 16384 },
         { uri: '192.168.1.141:11211', weight: 16384 },
@@ -73,7 +73,7 @@ suite('Sharding', function () {
 
     // Test keys returning the same values as the PHP app.
     function testCase(host, str) {
-      var failMessage = "Shard mismatch for the string " + JSON.stringify(str);
+      var failMessage = 'Shard mismatch for the string ' + JSON.stringify(str);
       assert.equal(m.hostForKey(str), host, failMessage);
     }
     for (var host in shardCases) {
@@ -83,7 +83,7 @@ suite('Sharding', function () {
 });
 
 suite('Basic commands', function basicCommandsTest() {
-  var m = new lib.sharder({
+  var m = new Sharder({
     servers: '127.0.0.1:11211',
     options: {
       namespace: 'mc:sharder-test:'
@@ -91,13 +91,13 @@ suite('Basic commands', function basicCommandsTest() {
   });
 
   test('Set and get', function runCommands(done) {
-    lib.async.auto({
+    async.auto({
       setItem: function setItem(callback) {
         m.set('set-test', 'foo', 2, callback);
       },
       getItem: ['setItem', function getItem(callback) {
         m.get('set-test', function getResult(error, value) {
-          if (error) return callback(error);
+          if (error) { return callback(error); }
           assert.equal(value, 'foo');
           callback();
         });
@@ -108,7 +108,7 @@ suite('Basic commands', function basicCommandsTest() {
   test('Set and wait for expire', function runCommands(done) {
     this.timeout(3000);
 
-    lib.async.series([
+    async.series([
       function setItem(callback) {
         m.set('expire-test', 'foo', 1, callback);
       },
@@ -116,9 +116,10 @@ suite('Basic commands', function basicCommandsTest() {
         setTimeout(callback, 2000);
       },
       function getItem(callback) {
+        console.log('check');
         m.get('expire-test', function getResult(error, value) {
-          if (error) return callback(error);
-          assert.equal(value, false);
+          if (error) { return callback(error); }
+          assert.equal(value, undefined);
           callback();
         });
       },
@@ -126,8 +127,8 @@ suite('Basic commands', function basicCommandsTest() {
   });
 });
 
-suite('Multi operations', function batchFetchTests(done) {
-  var m = new lib.sharder({
+suite('Multi operations', function batchFetchTests() {
+  var m = new Sharder({
     servers: [
       '127.0.0.1:11211',
       '127.0.0.1:11311',
@@ -140,7 +141,7 @@ suite('Multi operations', function batchFetchTests(done) {
     // deal with setting up multiple memcache instances for it, so change all
     // hosts to localhost:11211.
     connectionFactory: function useLocalhost(servers, options) {
-      return lib.sharder.defaultConnectionFactory('127.0.0.1:11211', options);
+      return Sharder.defaultConnectionFactory('127.0.0.1:11211', options);
     }
   });
 
@@ -158,19 +159,19 @@ suite('Multi operations', function batchFetchTests(done) {
     m.setMulti(values, 5, fetchItems);
 
     function fetchItems(error) {
-      if (error) return done(error);
+      if (error) { return done(error); }
 
-      lib.async.series([
+      async.series([
         function fetchBatch(callback) {
           m.getMulti(keys, function multiResult(error, result) {
-            if (error) return callback(error);
+            if (error) { return callback(error); }
             assert.deepEqual(values, result, 'Get multi values didn\'t add up');
             callback();
           });
         },
         function fetchSingle(callback) {
           m.getMulti(['multi-a'], function multiResult(error, result) {
-            if (error) return callback(error);
+            if (error) { return callback(error); }
             assert.equal(typeof result, 'object', 'Get multi didn\'t return an object');
             assert.deepEqual(result['multi-a'], values['multi-a'], 'Get multi didn\'t return the correct value when fetching a single object');
             callback();
@@ -194,16 +195,16 @@ suite('Multi operations', function batchFetchTests(done) {
     m.setMulti(values, 5, deleteItems);
 
     function deleteItems(error) {
-      if (error) return done(error);
+      if (error) { return done(error); }
 
       m.delMulti(keys, fetchItems);
     }
 
     function fetchItems(error) {
-      if (error) return done(error);
+      if (error) { return done(error); }
 
       m.getMulti(keys, function multiResult(error, result) {
-        if (error) return done(error);
+        if (error) { return done(error); }
 
         assert.equal(Object.keys(result).length, 0, 'All items were not deleted');
 
@@ -215,42 +216,39 @@ suite('Multi operations', function batchFetchTests(done) {
 
 suite('Error handling', function errorHandlingTest() {
   var runtimeError = true;
-  var m = new lib.sharder({
+  var m = new Sharder({
     servers: [
-      {host:'127.0.0.1:11211'},
-      {host:'127.0.0.1:11311'},
-      {host:'127.0.0.1:11411'}
+      {host: '127.0.0.1:11211'},
+      {host: '127.0.0.1:11311'},
+      {host: '127.0.0.1:11411'}
     ],
     connectionFactory: function getFailer() {
       return {
-        get: function(key, callback) {
+        get: function (key, callback) {
           callback(new Error('Simulated error'));
         },
-        del: function(key, callback) {
+        del: function (key, callback) {
           callback(new Error('Simulated error'));
         },
-        set: function(key, value, ttl, callback) {
+        set: function (key, value, ttl, callback) {
           if (runtimeError) {
             setTimeout(function triggerRuntimeError() {
               var object;
               callback(null, object.result);
             }, 1);
-          }
-          else {
+          } else {
             callback(new Error('Simulated error'));
           }
         },
-        getMulti: function(keys, callback) {
+        getMulti: function (keys, callback) {
           setTimeout(function triggerFaultyBehaviour() {
-            if (keys[0] == 'error') {
+            if (keys[0] === 'error') {
               callback(new Error('Simulated error'));
-            }
-            else if (keys[0] == 'duplicate') {
+            } else if (keys[0] === 'duplicate') {
               callback(null, {});
               callback(null, {});
               callback(null, {});
-            }
-            else {
+            } else {
               callback(null, {});
             }
           }, 1);
@@ -274,7 +272,7 @@ suite('Error handling', function errorHandlingTest() {
   test('Check get multi errors', function runCommands(done) {
     var gotError = false;
 
-    function registerError(error) {
+    function registerError() {
       gotError = true;
     }
 
@@ -303,7 +301,7 @@ suite('Error handling', function errorHandlingTest() {
   test('Check delete multi errors', function runCommands(done) {
     var gotError = false;
 
-    function registerError(error) {
+    function registerError() {
       gotError = true;
     }
 
@@ -324,7 +322,7 @@ suite('Error handling', function errorHandlingTest() {
     var gotError = false;
     runtimeError = false;
 
-    function registerError(error) {
+    function registerError() {
       gotError = true;
     }
 
@@ -352,7 +350,7 @@ suite('Error handling', function errorHandlingTest() {
 
     m.set('foobar-key', 52, 2);
 
-    m.once('error', function handleException(error) {
+    m.once('error', function handleException() {
       gotException = true;
     });
 

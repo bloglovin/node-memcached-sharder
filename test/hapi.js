@@ -1,32 +1,32 @@
+/* jshint node: true */
+/* globals suite, test */
+'use strict';
+
 //
 // # Test MC lite
 //
 
-var lib = {
-  assert: require('assert'),
-  hapi: require('hapi'),
-  sharder: require('../'),
-  packageInfo: require('../package.json')
-};
-var assert = lib.assert;
+var assert = require('assert');
+var hapi = require('hapi');
+var sharder = require('../');
 
 suite('Hapi plugin', function () {
 
   test('Can get connection', function () {
     // Create dummy connections
-    function connFactory(options) {
+    function connFactory() {
       return {};
     }
 
-    var server = new lib.hapi.Server();
+    var server = new hapi.Server();
     var plugin = {
-      name: lib.packageInfo.name,
-      version: lib.packageInfo.version,
-      path: '../',
-      register: lib.sharder.register
+      register: sharder.register,
+      options: {
+        connectionFactory: connFactory,
+      },
     };
 
-    server.pack.register(plugin, {}, function registerResult(error) {
+    server.register(plugin, function registerResult(error) {
       assert.equal(error, null, error ? error.message : undefined);
 
       var plug = server.plugins['bloglovin-memcached-sharder'];
@@ -34,7 +34,7 @@ suite('Hapi plugin', function () {
         'The plugin wasn\'t properly registered');
       assert.equal(typeof plug.connection, 'function',
         'The connection function wasn\'t exposed');
-      assert(plug.connection() instanceof lib.sharder,
+      assert(plug.connection() instanceof sharder,
         'The connection function doesn\'t return a sharder instance');
     });
   });
